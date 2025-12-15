@@ -2,6 +2,7 @@
   "name": "party-fund",
   "private": true,
   "version": "0.0.0",
+"homepage": "https://tester2021test.github.io/party-fund",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -29,6 +30,8 @@
     "globals": "^16.5.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.18",
-    "vite": "^7.2.4"
+    "vite": "^7.2.4",
+    "predeploy": "npm run build", 
+    "deploy": "gh-pages -d dist" 
   }
 }
