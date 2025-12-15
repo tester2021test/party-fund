@@ -474,7 +474,7 @@ function PartyDashboard({ user, party, onBack }) {
     setDeleteId(null);
   };
 
-  if(printMode) return <PrintView party={party} stats={stats} report={reportData} onClose={()=>setPrintMode(false)}/>;
+  if(printMode) return <PrintView party={party} stats={stats} report={reportData} transactions={transactions} members={members} onClose={()=>setPrintMode(false)}/>;
 
   return (
     <div className="flex flex-col h-full relative">
@@ -894,40 +894,172 @@ function MembersManager({ user, partyId, members, isAdmin, USE_SUPABASE }) {
   );
 }
 
-function PrintView({ party, stats, report, onClose }) {
+function PrintView({ party, stats, report, transactions, members, onClose }) {
   if(!report) return null;
+
+  // Helper to format split details
+  const getSplitDetails = (tx) => {
+    if (tx.type === 'in') return { names: '-', math: '' };
+    
+    // Determine involved members
+    const involvedIds = (tx.involvedMemberIds && tx.involvedMemberIds.length > 0) 
+      ? tx.involvedMemberIds 
+      : members.map(m => m.id); // Fallback for legacy or 'all' implicit
+      
+    const count = involvedIds.length;
+    const share = count > 0 ? (tx.amount / count).toFixed(0) : 0;
+    
+    // Format names
+    const namesList = involvedIds.map(id => members.find(m => m.id === id)?.name).filter(Boolean);
+    const namesStr = namesList.length === members.length ? 'Everyone' : namesList.join(', ');
+    
+    return {
+      names: `${namesStr} (${count})`,
+      math: `₹${share} / person`
+    };
+  };
+
   return (
     <div className="fixed inset-0 z-[60] bg-white overflow-y-auto">
       <div className="bg-slate-900 text-white p-4 flex justify-between items-center print:hidden sticky top-0">
         <button onClick={onClose} className="font-bold">Close</button>
         <button onClick={()=>window.print()} className="bg-blue-600 px-4 py-2 rounded-lg font-bold">Print</button>
       </div>
-      <div className="p-10 max-w-3xl mx-auto text-slate-900">
-        <h1 className="text-4xl font-black mb-2">{party.name}</h1>
-        <p className="text-slate-500 mb-8 border-b pb-8">Generated: {new Date().toLocaleDateString()}</p>
+      <div className="p-10 max-w-4xl mx-auto text-slate-900">
+        <div className="text-center border-b-2 border-slate-800 pb-6 mb-8">
+          <h1 className="text-4xl font-black uppercase tracking-wider mb-2">{party.name}</h1>
+          <p className="text-slate-500">Party Expense Report • {new Date().toLocaleDateString()}</p>
+        </div>
         
-        <div className="grid grid-cols-3 gap-4 mb-12">
-          <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 text-center"><div className="text-xs font-bold uppercase text-slate-400">Collected</div><div className="text-3xl font-black text-emerald-600">₹{stats.collected}</div></div>
-          <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 text-center"><div className="text-xs font-bold uppercase text-slate-400">Spent</div><div className="text-3xl font-black text-rose-600">₹{stats.spent}</div></div>
-          <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 text-center"><div className="text-xs font-bold uppercase text-slate-400">Balance</div><div className="text-3xl font-black text-blue-600">₹{stats.balance}</div></div>
+        <div className="grid grid-cols-3 gap-6 mb-12">
+          <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 text-center"><h3 className="text-xs font-bold uppercase text-slate-400 mb-2">Total Collected</h3><p className="text-3xl font-black text-emerald-600">₹{stats.collected}</p></div>
+          <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 text-center"><h3 className="text-xs font-bold uppercase text-slate-400 mb-2">Total Spent</h3><p className="text-3xl font-black text-rose-600">₹{stats.spent}</p></div>
+          <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 text-center"><h3 className="text-xs font-bold uppercase text-slate-400 mb-2">Balance</h3><p className="text-3xl font-black text-blue-600">₹{stats.balance}</p></div>
         </div>
 
-        <h3 className="font-bold text-xl border-b pb-2 mb-4">Final Settlement</h3>
-        <table className="w-full text-sm text-left">
-          <thead><tr className="text-slate-400"><th className="pb-2">Friend</th><th className="pb-2 text-right">Contribution</th><th className="pb-2 text-right">Cost Share</th><th className="pb-2 text-right">Net Balance</th></tr></thead>
-          <tbody className="divide-y">
-            {report.settlements.map(s => (
-              <tr key={s.id}>
-                <td className="py-3 font-bold">{s.name}</td>
-                <td className="py-3 text-right">₹{s.paid}</td>
-                <td className="py-3 text-right">₹{Math.round(s.share)}</td>
-                <td className={`py-3 text-right font-black ${s.net >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                  {s.net >= 0 ? '+' : ''}{Math.round(s.net)}
-                </td>
+        {/* NEW: Individual Breakdown Section */}
+        <div className="mb-12 print-break-inside">
+          <h3 className="text-xl font-bold mb-6 pb-2 border-b border-slate-200">Member-wise Expense Breakdown</h3>
+          <div className="space-y-8">
+            {members.map(m => {
+              // Filter expenses where this member is involved
+              const myExpenses = transactions.filter(t => {
+                if (t.type !== 'out') return false;
+                const involvedIds = (t.involvedMemberIds && t.involvedMemberIds.length > 0) 
+                  ? t.involvedMemberIds 
+                  : members.map(mem => mem.id);
+                return involvedIds.includes(m.id);
+              }).map(t => {
+                const involvedIds = (t.involvedMemberIds && t.involvedMemberIds.length > 0) 
+                  ? t.involvedMemberIds 
+                  : members.map(mem => mem.id);
+                return {
+                  ...t,
+                  myShare: t.amount / involvedIds.length
+                };
+              });
+
+              if (myExpenses.length === 0) return null;
+
+              const totalShare = myExpenses.reduce((sum, t) => sum + t.myShare, 0);
+
+              return (
+                <div key={m.id} className="bg-slate-50 p-6 rounded-2xl border border-slate-200 break-inside-avoid">
+                  <div className="flex justify-between items-center mb-4 border-b border-slate-200 pb-2">
+                    <h4 className="text-lg font-black text-slate-800">{m.name}</h4>
+                    <div className="text-right">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Charged</span>
+                      <span className="text-xl font-black text-rose-600">₹{Math.round(totalShare)}</span>
+                    </div>
+                  </div>
+                  <table className="w-full text-xs text-left">
+                    <thead>
+                      <tr className="text-slate-400">
+                        <th className="pb-2">Date</th>
+                        <th className="pb-2">Expense</th>
+                        <th className="pb-2 text-right">Full Amount</th>
+                        <th className="pb-2 text-right">My Share</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {myExpenses.map(t => (
+                        <tr key={t.id}>
+                          <td className="py-2 text-slate-500">{new Date(t.date).toLocaleDateString()}</td>
+                          <td className="py-2 font-bold text-slate-700">{t.description}</td>
+                          <td className="py-2 text-right text-slate-400">₹{t.amount}</td>
+                          <td className="py-2 text-right font-bold text-slate-900">₹{Math.round(t.myShare)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="mb-12 print-break-inside">
+          <h3 className="text-xl font-bold mb-4 pb-2 border-b border-slate-200">Detailed Transaction History</h3>
+          <table className="w-full text-xs text-left">
+            <thead>
+              <tr className="text-slate-400 border-b border-slate-200">
+                <th className="pb-2 pl-2">Date</th>
+                <th className="pb-2">Description</th>
+                <th className="pb-2">Category</th>
+                <th className="pb-2">Type</th>
+                <th className="pb-2">Split Details</th>
+                <th className="pb-2 text-right pr-2">Amount</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {transactions.map(t => {
+                const { names, math } = getSplitDetails(t);
+                return (
+                <tr key={t.id} className={t.type === 'in' ? 'bg-emerald-50/30' : ''}>
+                  <td className="py-2 pl-2 text-slate-500">{new Date(t.date).toLocaleDateString()}</td>
+                  <td className="py-2 font-bold text-slate-900">{t.description}</td>
+                  <td className="py-2 text-slate-500">{t.category}</td>
+                  <td className="py-2">
+                    {t.type === 'in' ? 
+                      <span className="text-emerald-600 font-bold">Income from {t.memberName}</span> : 
+                      <span className="text-slate-600">Expense (Fund)</span>
+                    }
+                  </td>
+                  <td className="py-2 pr-2">
+                    <div className="text-slate-900 font-medium leading-tight mb-0.5">{names}</div>
+                    {t.type === 'out' && <div className="text-slate-500 text-[10px] font-bold tracking-wide">{math}</div>}
+                  </td>
+                  <td className={`py-2 text-right pr-2 font-bold ${t.type === 'in' ? 'text-emerald-600' : 'text-slate-900'}`}>
+                    {t.type === 'in' ? '+' : '-'}₹{t.amount}
+                  </td>
+                </tr>
+              )})}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="print-break-inside">
+          <h3 className="text-xl font-bold mb-4 pb-2 border-b border-slate-200">Final Settlement</h3>
+          <table className="w-full text-sm text-left">
+            <thead><tr className="text-slate-400 border-b border-slate-200"><th className="pb-2 pl-2">Friend</th><th className="pb-2 text-right">Contribution</th><th className="pb-2 text-right">Cost Share</th><th className="pb-2 text-right pr-2">Net Balance</th></tr></thead>
+            <tbody className="divide-y divide-slate-100">
+              {report.settlements.map(s => (
+                <tr key={s.id}>
+                  <td className="py-3 pl-2 font-bold">{s.name}</td>
+                  <td className="py-3 text-right">₹{s.paid}</td>
+                  <td className="py-3 text-right">₹{Math.round(s.share)}</td>
+                  <td className={`py-3 text-right pr-2 font-black ${s.net >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {s.net >= 0 ? '+' : ''}{Math.round(s.net)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="mt-4 flex gap-4 text-xs text-slate-500 bg-slate-50 p-3 rounded-lg border border-slate-200">
+            <p><span className="text-emerald-600 font-bold">+ Green</span> means they get money back.</p>
+            <p><span className="text-rose-600 font-bold">- Red</span> means they need to pay.</p>
+          </div>
+        </div>
       </div>
     </div>
   );
