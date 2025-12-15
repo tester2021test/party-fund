@@ -22,7 +22,8 @@ import {
   AlertTriangle, 
   Printer,
   LogOut,
-  Loader2
+  Loader2,
+  X as XIcon
 } from 'lucide-react';
 
 /* ==========================================================================
@@ -202,8 +203,6 @@ export default function App() {
   const [selectedParty, setSelectedParty] = useState(null);
 
   // --- AUTO-FIX STYLING ---
-  // This automatically injects Tailwind CSS if your local setup failed.
-  // This ensures the app always has colors and graphics!
   useEffect(() => {
     const existingScript = document.getElementById('tailwind-cdn');
     if (!existingScript) {
@@ -449,12 +448,6 @@ function PartyDashboard({ user, party, onBack }) {
     };
   }, [members, transactions]);
 
-  const addMember = async (name) => {
-    const payload = { partyId: party.id, name, created_at: new Date().toISOString() };
-    if(USE_SUPABASE && typeof supabase !== 'undefined') await supabase.from('members').insert([payload]);
-    else localDb.add('party_fund_members', payload);
-  };
-
   const handleSaveTx = async (txData) => {
     // If editing
     if (editingTx) {
@@ -652,8 +645,15 @@ function TransactionModal({ type, members, onClose, onSave, initialData }) {
   const [amt, setAmt] = useState('');
   const [cat, setCat] = useState('');
   const [who, setWho] = useState(''); // MemberID
-  const [src, setSrc] = useState('fund'); // fund | friend
   
+  // Custom Category State
+  const [customCat, setCustomCat] = useState('');
+  const [isCustomCat, setIsCustomCat] = useState(false);
+
+  // Split Logic State
+  const [splitMode, setSplitMode] = useState('all'); // 'all' | 'select'
+  const [selectedSplitIds, setSelectedSplitIds] = useState(new Set());
+
   // Load data if editing
   useEffect(() => {
     if (initialData) {
@@ -662,23 +662,39 @@ function TransactionModal({ type, members, onClose, onSave, initialData }) {
       if (initialData.type === 'in') {
         setWho(initialData.memberId);
       } else {
-        if (initialData.payerId === 'admin') {
-          setSrc('fund');
-        } else {
-          setSrc('friend');
-          setWho(initialData.payerId);
+        // Expense is always Fund now
+        // Load split data
+        if (initialData.involvedMemberIds && initialData.involvedMemberIds.length > 0) {
+           if (initialData.involvedMemberIds.length !== members.length) {
+             setSplitMode('select');
+             setSelectedSplitIds(new Set(initialData.involvedMemberIds));
+           } else {
+             setSplitMode('all');
+             setSelectedSplitIds(new Set(members.map(m=>m.id)));
+           }
         }
       }
     } else {
       setCat(type==='in'?'Cash':'Food');
-      setSrc('fund');
       setWho('');
+      setSplitMode('all');
+      setSelectedSplitIds(new Set(members.map(m=>m.id)));
     }
-  }, [initialData, type]);
+  }, [initialData, type, members]);
+
+  const toggleSplitId = (id) => {
+    const next = new Set(selectedSplitIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedSplitIds(next);
+  };
 
   const handleSave = () => {
     if(!amt) return;
-    const payload = { type, amount: parseFloat(amt), category: cat, description: cat };
+    const finalCat = isCustomCat ? customCat : cat;
+    if (!finalCat) return alert("Please select or enter a category");
+
+    const payload = { type, amount: parseFloat(amt), category: finalCat, description: finalCat };
     
     if(type === 'in') {
       if(!who) return alert("Select who gave money");
@@ -686,19 +702,14 @@ function TransactionModal({ type, members, onClose, onSave, initialData }) {
       payload.memberId = who;
       payload.memberName = mem.name;
     } else {
-      if(src === 'friend') {
-        if(!who) return alert("Select who paid");
-        const mem = members.find(m => m.id === who);
-        payload.payerId = who;
-        payload.payerName = mem.name;
-      } else {
-        payload.payerId = 'admin';
-        payload.payerName = 'Fund';
-      }
+      // Expense: Always paid by Admin/Fund
+      payload.payerId = 'admin';
+      payload.payerName = 'Fund';
       
-      // Keep existing involved members if editing, else default to all
-      if (initialData) {
-        payload.involvedMemberIds = initialData.involvedMemberIds;
+      // Handle Split
+      if (splitMode === 'select') {
+        if (selectedSplitIds.size === 0) return alert("Please select at least one person to split with");
+        payload.involvedMemberIds = Array.from(selectedSplitIds);
       } else {
         payload.involvedMemberIds = members.map(m => m.id);
       }
@@ -708,26 +719,39 @@ function TransactionModal({ type, members, onClose, onSave, initialData }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
-      <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl animate-in slide-in-from-bottom-10">
+      <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl animate-in slide-in-from-bottom-10 max-h-[90vh] overflow-y-auto no-scrollbar">
         <h3 className={`text-xl font-black mb-6 ${type==='in'?'text-emerald-600':'text-rose-600'}`}>
           {initialData ? 'Edit Transaction' : (type==='in' ? 'Add Income' : 'Add Expense')}
         </h3>
         
-        <div className="space-y-4">
+        <div className="space-y-5">
+          {/* Amount */}
           <div>
             <label className="text-xs font-bold text-slate-400 uppercase">Amount</label>
             <input type="number" autoFocus value={amt} onChange={e=>setAmt(e.target.value)} className="w-full text-3xl font-black text-slate-800 border-b-2 border-slate-100 focus:border-slate-800 outline-none py-2" placeholder="0"/>
           </div>
 
+          {/* Category */}
           <div>
             <label className="text-xs font-bold text-slate-400 uppercase">Category</label>
-            <div className="flex gap-2 overflow-x-auto pb-2 mt-2 no-scrollbar">
-              {(type==='in'?INCOME_CATEGORIES:EXPENSE_CATEGORIES).map(c => (
-                <button key={c} onClick={()=>setCat(c)} className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap border transition-all ${cat===c ? 'bg-slate-800 text-white border-slate-800' : 'border-slate-200 text-slate-500'}`}>{c}</button>
-              ))}
-            </div>
+            {isCustomCat ? (
+              <div className="flex gap-2 mt-2">
+                <input value={customCat} onChange={e=>setCustomCat(e.target.value)} className="flex-1 border-b-2 border-indigo-500 py-1 font-bold outline-none" placeholder="Type category..." autoFocus/>
+                <button onClick={()=>setIsCustomCat(false)} className="p-2 bg-slate-100 rounded-full text-slate-500"><XIcon size={16}/></button>
+              </div>
+            ) : (
+              <div className="flex gap-2 overflow-x-auto pb-2 mt-2 no-scrollbar">
+                {(type==='in'?INCOME_CATEGORIES:EXPENSE_CATEGORIES).map(c => (
+                  <button key={c} onClick={()=>setCat(c)} className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap border transition-all ${cat===c ? 'bg-slate-800 text-white border-slate-800' : 'border-slate-200 text-slate-500'}`}>{c}</button>
+                ))}
+                {type === 'out' && (
+                  <button onClick={()=>setIsCustomCat(true)} className="px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap border border-indigo-100 bg-indigo-50 text-indigo-600">+ New</button>
+                )}
+              </div>
+            )}
           </div>
 
+          {/* Income Source */}
           {type === 'in' && (
             <div>
               <label className="text-xs font-bold text-slate-400 uppercase">From Whom?</label>
@@ -738,23 +762,36 @@ function TransactionModal({ type, members, onClose, onSave, initialData }) {
             </div>
           )}
 
+          {/* Expense Logic - SIMPLIFIED: No Payer Selection, Only Split */}
           {type === 'out' && (
             <div>
-              <label className="text-xs font-bold text-slate-400 uppercase">Who Paid?</label>
-              <div className="flex bg-slate-100 p-1 rounded-xl mt-1 mb-2">
-                <button onClick={()=>setSrc('fund')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${src==='fund'?'bg-white shadow text-slate-800':'text-slate-400'}`}>Fund</button>
-                <button onClick={()=>setSrc('friend')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${src==='friend'?'bg-white shadow text-slate-800':'text-slate-400'}`}>Friend</button>
+              <div className="flex justify-between items-center mb-2">
+                <label className="text-xs font-bold text-slate-400 uppercase">Split With</label>
+                <div className="flex bg-slate-100 p-0.5 rounded-lg">
+                  <button onClick={()=>setSplitMode('all')} className={`px-2 py-1 rounded text-[10px] font-bold transition-all ${splitMode==='all'?'bg-white shadow text-slate-800':'text-slate-400'}`}>Everyone</button>
+                  <button onClick={()=>setSplitMode('select')} className={`px-2 py-1 rounded text-[10px] font-bold transition-all ${splitMode==='select'?'bg-white shadow text-slate-800':'text-slate-400'}`}>Select</button>
+                </div>
               </div>
-              {src === 'friend' && (
-                <select value={who} onChange={e=>setWho(e.target.value)} className="w-full p-3 bg-slate-50 rounded-xl font-bold text-slate-700 outline-none">
-                  <option value="">Select Friend...</option>
-                  {members.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
-                </select>
+              
+              {splitMode === 'select' && (
+                <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto border border-slate-100 p-2 rounded-xl">
+                  {members.map(m => {
+                    const isSel = selectedSplitIds.has(m.id);
+                    return (
+                      <div key={m.id} onClick={()=>toggleSplitId(m.id)} className={`p-2 rounded-lg border text-xs font-bold flex items-center gap-2 cursor-pointer transition-colors ${isSel ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-400'}`}>
+                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${isSel?'bg-indigo-500 border-indigo-500':'border-slate-300'}`}>
+                          {isSel && <Check size={10} className="text-white"/>}
+                        </div>
+                        {m.name}
+                      </div>
+                    )
+                  })}
+                </div>
               )}
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3 pt-4">
+          <div className="grid grid-cols-2 gap-3 pt-2">
             <button onClick={onClose} className="py-4 rounded-xl font-bold text-slate-500 hover:bg-slate-50">Cancel</button>
             <button onClick={handleSave} className={`py-4 rounded-xl font-bold text-white shadow-lg active:scale-95 transition-all ${type==='in'?'bg-emerald-500 shadow-emerald-200':'bg-rose-500 shadow-rose-200'}`}>Save</button>
           </div>
