@@ -247,11 +247,11 @@ export default function App() {
   if (!session) return <LoginScreen onLogin={(sess) => setSession({ user: { id: sess.uid, email: sess.email } })} />;
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 flex flex-col max-w-lg mx-auto shadow-2xl border-x border-slate-200">
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 flex flex-col max-w-lg mx-auto shadow-2xl border-x border-slate-200 print:max-w-none print:shadow-none print:bg-white print:h-auto print:overflow-visible">
       
       {/* Top Bar */}
       {view !== 'detail' && (
-        <header className="bg-white p-6 sticky top-0 z-10 border-b border-slate-100 flex justify-between items-center shadow-sm">
+        <header className="bg-white p-6 sticky top-0 z-10 border-b border-slate-100 flex justify-between items-center shadow-sm print:hidden">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-md shadow-indigo-200">
               <Wallet size={20} />
@@ -268,7 +268,7 @@ export default function App() {
       )}
 
       {/* Content Area */}
-      <div className="flex-1 overflow-y-auto no-scrollbar pb- safe-bottom">
+      <div className="flex-1 overflow-y-auto no-scrollbar pb- safe-bottom print:overflow-visible print:h-auto">
         {view === 'list' && (
           <PartyList 
             user={session.user} 
@@ -293,6 +293,18 @@ export default function App() {
           />
         )}
       </div>
+      
+      <style>{`
+        @media print {
+          @page { margin: 0.5cm; }
+          body { background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; overflow: visible !important; height: auto !important; }
+          #root, .app-container { overflow: visible !important; height: auto !important; }
+          .no-print { display: none !important; }
+          .print-only { display: block !important; }
+          .print-break-inside { break-inside: avoid; }
+        }
+        .conic-chart { border-radius: 50%; }
+      `}</style>
     </div>
   );
 }
@@ -494,7 +506,7 @@ function PartyDashboard({ user, party, onBack }) {
       )}
 
       {/* Header */}
-      <div className="bg-slate-800 text-white p-6 rounded-b-[2.5rem] shadow-xl relative z-10">
+      <div className="bg-slate-800 text-white p-6 rounded-b-[2.5rem] shadow-xl relative z-10 print:hidden">
         <div className="flex justify-between items-center mb-6">
           <button onClick={onBack} className="p-2 bg-white/10 rounded-xl hover:bg-white/20"><ArrowLeft size={20}/></button>
           <div onClick={()=>setPrintMode(true)} className="flex items-center gap-2 px-3 py-1.5 bg-white/10 rounded-lg cursor-pointer hover:bg-white/20">
@@ -518,7 +530,7 @@ function PartyDashboard({ user, party, onBack }) {
       </div>
 
       {/* Main Scroll */}
-      <div className="flex-1 overflow-y-auto no-scrollbar p-5 pb-28">
+      <div className="flex-1 overflow-y-auto no-scrollbar p-5 pb-28 print:overflow-visible print:h-auto">
         {tab === 'home' && (
           <div className="space-y-4 animate-in fade-in">
             {/* Action Buttons (Only for Admin) */}
@@ -616,7 +628,7 @@ function PartyDashboard({ user, party, onBack }) {
       </div>
 
       {/* Nav */}
-      <div className="fixed bottom-0 w-full max-w-lg bg-white border-t border-slate-200 p-2 flex justify-around pb-6 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
+      <div className="fixed bottom-0 w-full max-w-lg bg-white border-t border-slate-200 p-2 flex justify-around pb-6 shadow-[0_-10px_40px_rgba(0,0,0,0.05)] print:hidden">
         {['home', 'friends', 'report'].map(t => (
           <button key={t} onClick={()=>setTab(t)} className={`p-4 rounded-2xl flex flex-col items-center gap-1 transition-all ${tab===t ? 'text-indigo-600 bg-indigo-50' : 'text-slate-400 hover:bg-slate-50'}`}>
             {t==='home' && <Home size={24} strokeWidth={tab===t?3:2}/>}
@@ -920,7 +932,7 @@ function PrintView({ party, stats, report, transactions, members, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[60] bg-white overflow-y-auto">
+    <div className="fixed inset-0 z-[60] bg-white overflow-y-auto print:static print:inset-auto print:h-auto print:overflow-visible">
       <div className="bg-slate-900 text-white p-4 flex justify-between items-center print:hidden sticky top-0">
         <button onClick={onClose} className="font-bold">Close</button>
         <button onClick={()=>window.print()} className="bg-blue-600 px-4 py-2 rounded-lg font-bold">Print</button>
